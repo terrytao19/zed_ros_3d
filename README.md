@@ -8,14 +8,10 @@ clone into src folder
 ```
 git clone https://github.com/terrytao19/zed_ros_3d.git
 ```
-├── ros_ws
-
-│   ├── src
-
-│   │   ├── package_1
-
-│   │   ├── package_2
-
+├── ros_ws\
+│   ├── src\
+│   │   ├── package_1\
+│   │   ├── package_2\
 │   │   ├── zed_ros_3d
  
 Make sure you have [zed_sdk](https://github.com/stereolabs/zed-sdk) installed
