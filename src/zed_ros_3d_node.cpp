@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
         std::cout << "Usage: \n 1. ./yolo_onnx_zed -s yolov8s.onnx yolov8s.engine\n 2. ./yolo_onnx_zed -s yolov8s.onnx yolov8s.engine images:1x3x512x512\n 3. ./yolo_onnx_zed yolov8s.engine <SVO path>" << std::endl;
         return 0;
     }
-
+    
     // Initialize ros publisher
     ros::init(argc, argv, "zed_ros_3d_node");
 
