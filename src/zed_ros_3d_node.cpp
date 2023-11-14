@@ -12,6 +12,9 @@
 #include <sl/Camera.hpp>
 #include <NvInfer.h>
 
+#include <zed_interfaces/Object.h>
+#include <zed_interfaces/ObjectsStamped.h>
+
 using namespace nvinfer1;
 #define NMS_THRESH 0.4
 #define CONF_THRESH 0.3
@@ -77,7 +80,11 @@ int main(int argc, char** argv) {
      * than we can send them, the number here specifies how many messages to
      * buffer up before throwing some away.
      */
-    ros::Publisher detections_pub = n.advertise<visualization_msgs::MarkerArray>("zed_detections_raw", 10);
+    std::string object_det_topic_root = "obj_det";
+    std::string object_det_topic = object_det_topic_root + "/objects";
+
+    ros::Publisher detections_pub = n.advertise<zed_interfaces::ObjectsStamped>(object_det_topic, 1);
+
     // Check Optim engine first
     if (std::string(argv[1]) == "-s" && (argc >= 4)) {
         std::string onnx_path = std::string(argv[2]);
@@ -201,49 +208,57 @@ int main(int argc, char** argv) {
             // Retrieve the tracked objects, with 2D and 3D attributes
             zed.retrieveObjects(objects, objectTracker_parameters_rt);
             // GL Viewer
-            zed.retrieveMeasure(point_cloud, sl::MEASURE::XYZRGBA, sl::MEM::GPU, pc_resolution);
-            zed.getPosition(cam_w_pose, sl::REFERENCE_FRAME::WORLD);
+            // zed.retrieveMeasure(point_cloud, sl::MEASURE::XYZRGBA, sl::MEM::GPU, pc_resolution);
+            // zed.getPosition(cam_w_pose, sl::REFERENCE_FRAME::WORLD);
 
-            visualization_msgs::MarkerArray marker_array_message;
+            size_t objCount = objects.object_list.size();
 
-            for(auto object : objects.object_list) {
+            zed_interfaces::ObjectsStampedPtr objMsg = boost::make_shared<zed_interfaces::ObjectsStamped>();
+            ros::Time t = ros::Time::now();
+            objMsg->header.stamp = t;
+            objMsg->header.frame_id = "zed2i_left_camera_frame";
 
-                std::vector<sl::float3> object_3Dbbox = object.bounding_box; // Get the 3D bounding box of the object
+            objMsg->objects.resize(objCount);
 
-                if(object_3Dbbox.size() > 0) {
+            size_t idx = 0;
+            for (auto data : objects.object_list)
+            {
+                objMsg->objects[idx].label = sl::toString(data.label).c_str();
+                objMsg->objects[idx].sublabel = sl::toString(data.sublabel).c_str();
+                objMsg->objects[idx].label_id = data.raw_label;
+                objMsg->objects[idx].instance_id = data.id;
+                objMsg->objects[idx].confidence = data.confidence;
 
-                    std::cout << object.id << " | " << object_3Dbbox[0] << " | " << object.raw_label << std::endl;
+                memcpy(&(objMsg->objects[idx].position[0]), &(data.position[0]), 3 * sizeof(float));
+                memcpy(&(objMsg->objects[idx].position_covariance[0]), &(data.position_covariance[0]), 6 * sizeof(float));
+                memcpy(&(objMsg->objects[idx].velocity[0]), &(data.velocity[0]), 3 * sizeof(float));
 
-                    visualization_msgs::Marker marker;
+                objMsg->objects[idx].tracking_available = 1;
+                objMsg->objects[idx].tracking_state = static_cast<int8_t>(data.tracking_state);
+                // NODELET_INFO_STREAM( "[" << idx << "] Tracking: " <<
+                // sl::toString(static_cast<sl::OBJECT_TRACKING_STATE>(data.tracking_state)));
+                objMsg->objects[idx].action_state = static_cast<int8_t>(data.action_state);
 
-                    marker.header.stamp = ros::Time::now();
-                    marker.header.seq = count;
-                    marker.header.frame_id = "base_link";
-                    marker.ns = "zed_ros_3d";
-                    marker.id = object.id;
-                    marker.type = visualization_msgs::Marker::SPHERE;
-                    marker.action = visualization_msgs::Marker::ADD;
-                    marker.pose.position.x = object_3Dbbox[0][2] / 1000;
-                    marker.pose.position.y = object_3Dbbox[0][0] / 1000;
-                    marker.pose.position.z = object_3Dbbox[0][1] / 1000;
-                    marker.pose.orientation.x = 0;
-                    marker.pose.orientation.y = 0;
-                    marker.pose.orientation.z = 0;
-                    marker.pose.orientation.w = 1;
-                    marker.scale.x = .1;
-                    marker.scale.y = .1;
-                    marker.scale.z = .1;
-                    marker.color.r = 0;
-                    marker.color.g = 0;
-                    marker.color.b = 255;
-                    marker.color.a = 255;
-                    marker.lifetime = ros::Duration(.5);
-                    
-                    marker_array_message.markers.push_back(marker);
-
+                if (data.bounding_box_2d.size() == 4)
+                {
+                memcpy(&(objMsg->objects[idx].bounding_box_2d.corners[0]), &(data.bounding_box_2d[0]), 8 * sizeof(unsigned int));
                 }
+                if (data.bounding_box.size() == 8)
+                {
+                memcpy(&(objMsg->objects[idx].bounding_box_3d.corners[0]), &(data.bounding_box[0]), 24 * sizeof(float));
+                }
+
+                memcpy(&(objMsg->objects[idx].dimensions_3d[0]), &(data.dimensions[0]), 3 * sizeof(float));
+
+                // Body Detection is in a separate module in ZED SDK v4
+                objMsg->objects[idx].skeleton_available = false;
+
+                // at the end of the loop
+                idx++;
             }
-            detections_pub.publish(marker_array_message);
+
+            detections_pub.publish(objMsg);
+
             ros::spinOnce();
         }
         ++count;
