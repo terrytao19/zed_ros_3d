@@ -12,6 +12,8 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_ros
   visualization_msgs
   zed_interfaces
+  image_transport
+  # cv_bridge
 )
 
 
@@ -38,7 +40,8 @@ link_libraries( ${TRT_LIBS}
                 ${OPENGL_LIBRARIES}
                 ${GLUT_LIBRARIES}
                 ${GLEW_LIBRARIES}
-                ${OpenCV_LIBRARIES})
+                # ${OpenCV_LIBRARIES}
+                )
 
 include_directories(/usr/local/cuda/include)
 link_directories(/usr/local/cuda/lib64)

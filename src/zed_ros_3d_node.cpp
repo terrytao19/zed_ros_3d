@@ -5,7 +5,8 @@
 #include "logging.h"
 #include "utils.h"
 #include "ros/ros.h"
-#include "visualization_msgs/MarkerArray.h"
+
+
 
 #include "yolo.hpp"
 
@@ -14,6 +15,11 @@
 
 #include <zed_interfaces/Object.h>
 #include <zed_interfaces/ObjectsStamped.h>
+
+// #include <cv_bridge/cv_bridge.h>
+// #include <opencv2/opencv.hpp>
+// #include <image_transport/image_transport.h>
+// #include <sensor_msgs/image_encodings.h>
 
 using namespace nvinfer1;
 #define NMS_THRESH 0.4
@@ -84,6 +90,9 @@ int main(int argc, char** argv) {
     std::string object_det_topic = object_det_topic_root + "/objects";
 
     ros::Publisher detections_pub = n.advertise<zed_interfaces::ObjectsStamped>(object_det_topic, 1);
+    // image_transport::ImageTransport it_(n);
+    // image_transport::Publisher image_pub_ = it_.advertise("/zed_detections_img", 1);
+    // cv_bridge::CvImagePtr cv_ptr(new cv_bridge::CvImage);
 
     // Check Optim engine first
     if (std::string(argv[1]) == "-s" && (argc >= 4)) {
@@ -103,7 +112,7 @@ int main(int argc, char** argv) {
         Yolo::build_engine(onnx_path, engine_path, dyn_dim_profile);
         return 0;
     }
-    
+
     /// Opening the ZED camera before the model deserialization to avoid cuda context issue
     sl::Camera zed;
     sl::InitParameters init_parameters;
@@ -112,6 +121,8 @@ int main(int argc, char** argv) {
     init_parameters.coordinate_system = sl::COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; // OpenGL's coordinate system is right_handed
     init_parameters.camera_resolution = sl::RESOLUTION::HD720;
     init_parameters.camera_fps = 60;
+    // Set exposure to 50% of camera framerate
+    zed.setCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, 50);
     
     if (argc > 1) {
         std::string zed_opt = argv[2];
@@ -139,7 +150,6 @@ int main(int argc, char** argv) {
     auto camera_config = zed.getCameraInformation().camera_configuration;
     sl::Resolution pc_resolution(std::min((int) camera_config.resolution.width, 720), std::min((int) camera_config.resolution.height, 404));
     auto camera_info = zed.getCameraInformation(pc_resolution).camera_configuration;
-
     // Creating the inference engine class
     std::string engine_name = "";
     Yolo detector;
@@ -155,7 +165,6 @@ int main(int argc, char** argv) {
         std::cerr << "Detector init failed!" << std::endl;
         return EXIT_FAILURE;
     }
-
     auto display_resolution = zed.getCameraInformation().camera_configuration.resolution;
     sl::Mat left_sl, point_cloud;
     cv::Mat left_cv;
@@ -166,15 +175,17 @@ int main(int argc, char** argv) {
 
     int count = 0;
 
+    ros::Time t;
     while (ros::ok()) {
         if (zed.grab() == sl::ERROR_CODE::SUCCESS) {
+
+            t = ros::Time::now();
 
             // Get image for inference
             zed.retrieveImage(left_sl, sl::VIEW::LEFT);
 
             // Running inference
             auto detections = detector.run(left_sl, display_resolution.height, display_resolution.width, CONF_THRESH);
-
             // Get image for display
             left_cv = slMat2cvMat(left_sl);
 
@@ -201,22 +212,23 @@ int main(int argc, char** argv) {
                 cv::rectangle(left_cv, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
                 cv::putText(left_cv, std::to_string((int) detections[j].label), cv::Point(r.x, r.y - 1), cv::FONT_HERSHEY_PLAIN, 1.2, cv::Scalar(0xFF, 0xFF, 0xFF), 2);
             }
+
             cv::imshow("Objects", left_cv);
             cv::waitKey(10);
 
+            // cv_ptr->encoding = "bgr8";
+            // cv_ptr->header.stamp = t;
+            // cv_ptr->header.frame_id = "/zed_detections_img";
+            // cv_ptr->image = left_cv;
 
             // Retrieve the tracked objects, with 2D and 3D attributes
-            zed.retrieveObjects(objects, objectTracker_parameters_rt);
-            // GL Viewer
-            // zed.retrieveMeasure(point_cloud, sl::MEASURE::XYZRGBA, sl::MEM::GPU, pc_resolution);
-            // zed.getPosition(cam_w_pose, sl::REFERENCE_FRAME::WORLD);
+            zed.retrieveObjects(objects, objectTracker_parameters_rt);  
 
             size_t objCount = objects.object_list.size();
 
             zed_interfaces::ObjectsStampedPtr objMsg = boost::make_shared<zed_interfaces::ObjectsStamped>();
-            ros::Time t = ros::Time::now();
             objMsg->header.stamp = t;
-            objMsg->header.frame_id = "zed2i_left_camera_frame";
+            objMsg->header.frame_id = "base_link";
 
             objMsg->objects.resize(objCount);
 
@@ -256,6 +268,8 @@ int main(int argc, char** argv) {
                 // at the end of the loop
                 idx++;
             }
+
+            // image_pub_.publish(cv_ptr->toImageMsg());
 
             detections_pub.publish(objMsg);
 
