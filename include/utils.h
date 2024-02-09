@@ -23,18 +23,7 @@ static inline cv::Mat preprocess_img(cv::Mat& img, int input_w, int input_h) {
         y = 0;
     }
     cv::Mat re(h, w, CV_8UC3);
-    // std::cout << "OpenCV version : " << CV_VERSION << "\n";
-    // std::cout << "Major version : " << CV_MAJOR_VERSION << "\n";
-    // std::cout << "Minor version : " << CV_MINOR_VERSION << "\n";
-    // std::cout << "Subminor version : " << CV_SUBMINOR_VERSION << "\n";
-    // std::cout << "before\n";
-    std::cout << re.size();
-    // std::cout << "after\n";
-    std::cout << img.size();
-    // std::cout << "after1.5\n";
-    std::cout << img.empty() << "\n" << re.empty() << "\n";
     cv::resize(img, re, re.size(), 0, 0, cv::INTER_LINEAR);
-    // std::cout << "after1\n";
     cv::Mat out(input_h, input_w, CV_8UC3, cv::Scalar(128, 128, 128));
     re.copyTo(out(cv::Rect(x, y, re.cols, re.rows)));
     return out;
